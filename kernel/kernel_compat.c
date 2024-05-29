@@ -1,6 +1,8 @@
 #include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/nsproxy.h>
+#include <linux/cred.h>
+#include <linux/init_task.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 #include <linux/sched/task.h>
 #else
@@ -95,7 +97,15 @@ struct file *ksu_filp_open_compat(const char *filename, int flags, umode_t mode)
 		ksu_load_ns_fs(&android_context_saved);
 		task_unlock(current);
 	}
+	/*
+	 * PackageManager's packages.list is mode 0640 and owned by
+	 * system:package_info.  Manager's becomeManager() handshake can call
+	 * this helper from an application context, so use init_cred only for the
+	 * controlled kernel-side VFS lookup and restore the caller immediately.
+	 */
+	const struct cred *old_cred = override_creds(&init_cred);
 	struct file *fp = filp_open(filename, flags, mode);
+	revert_creds(old_cred);
 	if (android_context_saved_enabled) {
 		task_lock(current);
 		ksu_load_ns_fs(&saved);

@@ -219,6 +219,17 @@ int ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		return 0;
 	}
 
+	/*
+	 * The Manager can be installed after the packages.list rename that
+	 * normally triggers throne tracking.  Let its harmless handshake request
+	 * a signed-APK scan before applying the privileged-interface check.  The
+	 * scan itself only crowns an APK with the compile-time expected signature,
+	 * so an arbitrary application cannot become Manager.
+	 */
+	if (arg2 == CMD_BECOME_MANAGER && !is_manager()) {
+		track_throne();
+	}
+
 	// TODO: find it in throne tracker!
 	uid_t current_uid_val = current_uid().val;
 	uid_t manager_uid = ksu_get_manager_uid();

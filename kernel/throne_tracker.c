@@ -16,6 +16,7 @@
 uid_t ksu_manager_uid = KSU_INVALID_UID;
 
 #define SYSTEM_PACKAGES_LIST_PATH "/data/system/packages.list.tmp"
+#define SYSTEM_PACKAGES_LIST_FALLBACK_PATH "/data/system/packages.list"
 
 struct uid_data {
 	struct list_head list;
@@ -107,6 +108,24 @@ struct apk_path_hash {
 };
 
 static struct list_head apk_path_hash_list = LIST_HEAD_INIT(apk_path_hash_list);
+
+static struct file *open_packages_list(void)
+{
+	struct file *fp;
+
+	/* During PackageManager's atomic rename the temporary file is the
+	 * consistent view.  A Manager started later must be able to request a
+	 * scan too, when only the final file exists. */
+	fp = ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+	if (!IS_ERR(fp))
+		return fp;
+
+	fp = ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_FALLBACK_PATH,
+				  O_RDONLY, 0);
+	if (!IS_ERR(fp))
+		pr_info("using final packages.list for manager scan\n");
+	return fp;
+}
 
 struct my_dir_context {
 	struct dir_context ctx;
@@ -280,10 +299,9 @@ static bool is_uid_exist(uid_t uid, char *package, void *data)
 
 void track_throne()
 {
-	struct file *fp =
-		ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+	struct file *fp = open_packages_list();
 	if (IS_ERR(fp)) {
-		pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n",
+		pr_err("%s: open packages.list failed: %ld\n",
 		       __func__, PTR_ERR(fp));
 		return;
 	}
@@ -358,6 +376,15 @@ void track_throne()
 		}
 		pr_info("Searching manager...\n");
 		search_manager("/data/app", 2, &uid_list);
+		/*
+		 * A userdebug build may ship the official Manager as a product
+		 * prebuilt.  PackageManager records it in packages.list, but it is
+		 * not under /data/app and therefore the upstream scan would never
+		 * crown it.  Keep the normal data-app scan and cover the Android
+		 * preinstalled application locations as well.
+		 */
+		search_manager("/product/priv-app", 2, &uid_list);
+		search_manager("/product/app", 2, &uid_list);
 		pr_info("Search manager finished\n");
 	}
 
