@@ -67,8 +67,20 @@ static void crown_manager(const char *apk, struct list_head *uid_data)
 {
 	char pkg[KSU_MAX_PACKAGE_NAME];
 	if (get_pkg_from_apk_path(pkg, apk) < 0) {
-		pr_err("Failed to get package name from apk path: %s\n", apk);
-		return;
+		/*
+		 * Preinstalled managers live at
+		 * <partition>/priv-app/<Module>/base.apk, where the directory is
+		 * named after the build module and carries no package name.  The
+		 * APK signature was already checked against the official Manager,
+		 * so fall back to its compiled-in package name.
+		 */
+		if (strstr(apk, "/priv-app/") || strstr(apk, "/app/"))
+			strscpy(pkg, KSU_MANAGER_PACKAGE, sizeof(pkg));
+		else {
+			pr_err("Failed to get package name from apk path: %s\n",
+			       apk);
+			return;
+		}
 	}
 
 	pr_info("manager pkg: %s\n", pkg);

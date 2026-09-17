@@ -45,6 +45,14 @@ ifndef KSU_EXPECTED_HASH
 KSU_EXPECTED_HASH := c371061b19d8c7d7d6133c6a9bafe198fa944e50c1b31c9d8daa8d7f1fc2d2d6
 endif
 
+# The TPM312 image ships the official Manager as a product prebuilt, so its
+# package name is fixed and can be compiled in.  The crown fallback for
+# system-app paths uses it because those directories are named after the build
+# module, not the package.
+ifndef KSU_MANAGER_PACKAGE
+KSU_MANAGER_PACKAGE := me.weishu.kernelsu
+endif
+
 ifdef KSU_MANAGER_PACKAGE
 ccflags-y += -DKSU_MANAGER_PACKAGE=\"$(KSU_MANAGER_PACKAGE)\"
 $(info -- KernelSU Manager package name: $(KSU_MANAGER_PACKAGE))
