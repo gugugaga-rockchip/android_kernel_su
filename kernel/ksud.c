@@ -5,6 +5,7 @@
 #include <linux/err.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/init_task.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 #include <linux/input-event-codes.h>
@@ -66,6 +67,46 @@ bool ksu_input_hook __read_mostly = true;
 
 u32 ksu_devpts_sid;
 
+// The Manager's su is redirected to KSUD_PATH, so the binary has to exist on
+// the data partition.  It is embedded in the kernel image (embed_ksud.c) and
+// written once /data is mounted.  The write sleeps, so it runs from a
+// workqueue rather than the execve kprobe handler.
+extern const char ksud[];
+extern unsigned int ksud_size;
+
+static void install_ksud(struct work_struct *work)
+{
+	const struct cred *old_cred;
+	struct file *fp;
+	loff_t pos = 0;
+	size_t left = ksud_size;
+	ssize_t written;
+
+	old_cred = override_creds(&init_cred);
+	fp = filp_open(KSUD_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+	if (IS_ERR(fp)) {
+		revert_creds(old_cred);
+		pr_err("install ksud: open failed: %ld\n", PTR_ERR(fp));
+		return;
+	}
+	while (left) {
+		written = ksu_kernel_write_compat(fp, ksud + (ksud_size - left),
+						  left, &pos);
+		if (written <= 0) {
+			pr_err("install ksud: write failed: %zd\n", written);
+			filp_close(fp, NULL);
+			revert_creds(old_cred);
+			return;
+		}
+		left -= written;
+	}
+	filp_close(fp, NULL);
+	revert_creds(old_cred);
+	pr_info("install ksud: wrote %u bytes to %s\n", ksud_size, KSUD_PATH);
+}
+
+static DECLARE_WORK(install_ksud_work, install_ksud);
+
 void on_post_fs_data(void)
 {
 	static bool done = false;
@@ -75,6 +116,7 @@ void on_post_fs_data(void)
 	}
 	done = true;
 	pr_info("on_post_fs_data!\n");
+	schedule_work(&install_ksud_work);
 	ksu_load_allow_list();
 	// sanity check, this may influence the performance
 	stop_input_hook();
