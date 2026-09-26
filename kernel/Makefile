@@ -18,10 +18,18 @@ obj-$(CONFIG_KSU) += kernelsu.o
 
 # .git is a text file while the module is imported by 'git submodule add'.
 ifeq ($(shell test -e $(srctree)/$(src)/../.git; echo $$?),0)
-$(shell cd $(srctree)/$(src); /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin [ -f ../.git/shallow ] && git fetch --unshallow)
 KSU_GIT_VERSION := $(shell cd $(srctree)/$(src); /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin git rev-list --count HEAD)
-# ksu_version: major * 10000 + git version + 200 for historical reasons
-$(eval KSU_VERSION=$(shell expr 10000 + $(KSU_GIT_VERSION) + 200))
+# ksu_version: major * 10000 + git version + 200 for historical reasons.
+# The Android repo client is intentionally initialized with depth=1. Its
+# gitdir file points to a one-commit shallow checkout, so rev-list would report
+# 10201 even though this tree contains the v0.9.5 code required by the bundled
+# Manager. Use the v0.9.5 minimum supported kernel version for that checkout;
+# full-history clones continue to derive the exact count.
+ifeq ($(strip $(KSU_GIT_VERSION)),1)
+KSU_VERSION := 11071
+else
+KSU_VERSION := $(shell expr 10000 + $(KSU_GIT_VERSION) + 200)
+endif
 $(info -- KernelSU version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
 else # If there is no .git file, the default version will be passed.
